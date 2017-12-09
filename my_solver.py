@@ -6,6 +6,7 @@ import time
 import os 
 import _pickle as pickle
 from scipy import ndimage
+from data_loader import *
 #from utils import *
 #from bleu import evaluate
 
@@ -181,8 +182,7 @@ class CaptioningSolver(object):
                 print('Interrupt !!')
                 saver.save(sess, os.path.join(self.model_path, 'model'), global_step=global_step)
                 print('model-%s saved.' % (step_))            
-            
-    """
+
     def test(self, data, split='train', attention_visualization=False, save_sampled_captions=True):
         '''
         Args:
@@ -197,7 +197,6 @@ class CaptioningSolver(object):
             - save_sampled_captions: If True, save sampled captions to pkl file for computing BLEU scores.
         '''
 
-        features = data['features']
 
         # build a graph to sample captions
         alphas, betas, sampled_captions = self.model.build_sampler(max_len=20)    # (N, max_len, L), (N, max_len)
@@ -207,6 +206,7 @@ class CaptioningSolver(object):
         with tf.Session(config=config) as sess:
             saver = tf.train.Saver()
 
+            # restore model
             if self.restore_model is None:
                 print('please specify the restore path')
                 return
@@ -218,20 +218,57 @@ class CaptioningSolver(object):
             else:
                 print('Start testing with pretrained Model {}...'.format(latest_ckpt))
                 saver.restore(sess, latest_ckpt)
-            
 
-
-            #features_batch, image_files = sample_coco_minibatch(data, self.batch_size)
-            feed_dict = { self.model.features: features_batch }
-            alps, bts, sam_cap = sess.run([alphas, betas, sampled_captions], feed_dict)  # (N, max_len, L), (N, max_len)
+            # read testing data
+            if not os.path.isfile('test_dict.npy'):
+                data = preprocess_coco_testdata('test.csv')
+            else:
+                data = load_coco_testdata('test_dict.npy')
             
             def decode_from_st_to_ed(ids, st=0, ed=1):
                 start_point = 0 if st not in ids else ids.index(st)
                 end_point = None if ed not in ids else ids.index(ed)
                 return ' '.join([self.model.dec_map[x] for x in ids[start_point:end_point])
 
-            decoded = decode_from_st_to_ed(sam_cap)
+            img_id_list = []
+            caption_list = []
 
+            total_start_time = time.time()
+            for img_id in data['img_id']:
+                start_time = time.time()
+                ID = int(img_id.split('.')[0])
+                feature_name = './image/trianval2014_features/COCO_trainval2014_{:012d}.npy'.format(ID)
+
+                feature = np.load(feature_name)
+                feature = np.expand_dims(feature, axis=0)
+
+                alps, bts, sam_cap = sess.run([alphas, betas, sampled_captions], 
+                                feed_dict={self.model.features: feature})
+
+                decoded = decode_from_st_to_ed(sam_cap)
+
+                img_id_list.append(img_id)
+                caption_list.append(decoded)
+                elapsed_time = time.time()-start_time
+                print('id: {}, elapsed time: {} sec\n    caption: {}'.format(ID, elapsed_time, decoded))
+
+            total_elapsed_time = time.time() - total_start_time
+
+            print('complete! spend {} sec', total_elapsed_time)
+            print('generating csv file...')
+            df = pd.DataFrame({
+                'img_id':img_id_list,
+                'caption':caption_list,
+            }).set_index(['img_id'])
+
+            df.to_csv('demo.csv')
+
+            print('complete')
+
+            #features_batch, image_files = sample_coco_minibatch(data, self.batch_size)
+            #feed_dict = { self.model.features: features_batch }
+            #alps, bts, sam_cap = sess.run([alphas, betas, sampled_captions], feed_dict)  # (N, max_len, L), (N, max_len)
+            '''
             if attention_visualization:
                 for n in range(10):
                     print "Sampled Caption: %s" %decoded[n]
@@ -255,7 +292,10 @@ class CaptioningSolver(object):
                         plt.imshow(alp_img, alpha=0.85)
                         plt.axis('off')
                     plt.show()
+            '''
 
+            
+            '''
             if save_sampled_captions:
                 all_sam_cap = np.ndarray((features.shape[0], 20))
                 num_iter = int(np.ceil(float(features.shape[0]) / self.batch_size))
@@ -265,6 +305,7 @@ class CaptioningSolver(object):
                     all_sam_cap[i*self.batch_size:(i+1)*self.batch_size] = sess.run(sampled_captions, feed_dict)  
                 all_decoded = decode_captions(all_sam_cap, self.model.idx_to_word)
                 save_pickle(all_decoded, "./data/%s/%s.candidate.captions.pkl" %(split,split))
-    """
+            '''
+
 
 

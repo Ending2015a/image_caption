@@ -24,8 +24,22 @@ def preprocess_coco_data(csv_file):
 
     return data
 
-def load_coco_data(csv_file):
-    data = np.load(csv_file).item()
+def preprocess_coco_testdata(csv_file, out='test_dict.npy'):
+    df = pd.read_csv(csv_file)
+    data = {}
+    data['img_id'] = []
+    for img_id, row in df.iterrows():
+        data['img_id'].append(row['img_id'])
+
+    np.save(out, data)
+    return data
+
+def load_coco_testdata(npy_file):
+    data = np.load(npy_file).item()
+    return data
+
+def load_coco_data(npy_file):
+    data = np.load(npy_file).item()
     return data
 
 def encode_caption(enc_map, caps):

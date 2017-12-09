@@ -77,7 +77,7 @@ def create_tfrecords(data, record_name, split_num=100, start_from=0):
             # create examples
             example = tf.train.Example(features=tf.train.Features(
                         feature={
-                            'id': _int64_feature([filename_id]),  # 1
+                            'id': _int64_feature([file_id]),  # 1
                             'feature': _float_feature(img_feature),  # 196*512
                             'caption': _int64_feature(cap), # variable size
                             'padded': _int64_feature(padded_cap) # caption_padding_size
@@ -87,18 +87,18 @@ def create_tfrecords(data, record_name, split_num=100, start_from=0):
             writer.write(example.SerializeToString())
             if(idx+1) % 1000 == 0:
                 print('[record {}] id: {}, feature shape: {}, caption: {}, padded: {}'.format(idx,
-                            filename_id, img_feature.shape, decode(caps), decode(padded_caps)))
+                            file_id, img_feature.shape, decode(cap), decode(padded_cap)))
 
         elapsed_time = time.time() - start_time
         remaining_time = float((split_num-(record_num+1)) // num_worker) * elapsed_time
         print('create {}-{}.tfrecord -- contains {} records / in {:4f} sec / remaining about {:4f} sec'
-                    .format(record_name, str(record_num+1), count, elapsed_time, remaining_time)
+                    .format(record_name, str(record_num+1), count, elapsed_time, remaining_time))
         
         total_count += count
         writer.close()
 
     # start task
-    for i in range(start_from, num_files):
+    for i in range(start_from, split_num):
         pack_task(i)
 
     print('Total records: {}'.format(total_count))

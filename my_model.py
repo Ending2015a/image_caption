@@ -95,6 +95,7 @@ class CaptionGenerator(object):
                 'mask': mask}
             return records
 
+
         def tfrecord_iterator(filenames, batch_size, record_parser):
             dataset = tf.data.TFRecordDataset(filenames)
             dataset = dataset.map(record_parser, num_parallel_calls=16)
