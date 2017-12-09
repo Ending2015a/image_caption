@@ -138,6 +138,8 @@ class CaptioningSolver(object):
                         # run op
                         op = [global_step, self.model.captions, loss, generated_captions, train_op]
                         step_, ground_truths, l, gen_caps, _ = sess.run(op, feed_dict=feed_dict)
+                        if save_point == 0:
+                            save_point = step_
                         
                         curr_loss += l
 
@@ -285,7 +287,7 @@ class CaptioningSolver(object):
                 caption_list.append(decoded)
 
                 elapsed_time = time.time()-start_time
-                print('[data {}/{}] id: {}, elapsed time: {} sec\n    caption: {}'.format(index, dataset_size, ID, elapsed_time))
+                print('[data {}/{}] id: {}, elapsed time: {} sec'.format(index, dataset_size, ID, elapsed_time))
                 print('    Generated Caption: {}'.format(decoded))
 
             total_elapsed_time = time.time() - total_start_time
