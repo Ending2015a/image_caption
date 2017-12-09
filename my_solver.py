@@ -138,8 +138,6 @@ class CaptioningSolver(object):
                         # run op
                         op = [global_step, self.model.captions, loss, generated_captions, train_op]
                         step_, ground_truths, l, gen_caps, _ = sess.run(op, feed_dict=feed_dict)
-                        if save_point == 0:
-                            save_point = step_
                         
                         curr_loss += l
 
@@ -299,7 +297,12 @@ class CaptioningSolver(object):
                 'caption':caption_list,
             }).set_index(['img_id'])
 
-            df.to_csv('demo.csv')
+            if not os.path.exists('./generated'):
+                os.makedirs('./generated')
+            df.to_csv('./generated/demo.csv')
+            
+            print('generating answer file...')
+            os.system('cd CIDErD && ./gen_score -i ../generated/demo.csv -r ../generated/score.csv')
 
             #features_batch, image_files = sample_coco_minibatch(data, self.batch_size)
             #feed_dict = { self.model.features: features_batch }
