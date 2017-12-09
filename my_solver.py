@@ -228,7 +228,7 @@ class CaptioningSolver(object):
             def decode_from_st_to_ed(ids, st=0, ed=1):
                 start_point = 0 if st not in ids else ids.index(st)
                 end_point = None if ed not in ids else ids.index(ed)
-                return ' '.join([self.model.dec_map[x] for x in ids[start_point:end_point])
+                return ' '.join([self.model.dec_map[x] for x in ids[start_point:end_point]])
 
             img_id_list = []
             caption_list = []
