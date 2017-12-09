@@ -71,13 +71,10 @@ class CaptionGenerator(object):
             features = tf.parse_single_example(record, features=keys_to_features)
             file_id = features['id']
             feature = features['feature']
-            #caption = features['caption'].values
             padded = features['padded']
-            #caption = tf.cast(caption, tf.int32)
             padded = tf.cast(padded, tf.int32)
 
             caption_len = tf.shape(padded)[0]
-
             input_len = tf.expand_dims(tf.subtract(caption_len, 1), 0)
 
             input_seq = tf.slice(padded, [0], input_len)
@@ -158,47 +155,7 @@ class CaptionGenerator(object):
         self.target_seq = target_seq
         self.input_mask = input_mask
 
-    """
-    def __init__(self, word_to_idx, dim_feature=[196, 512], dim_embed=512, dim_hidden=1024, n_time_step=16, 
-                  prev2out=True, ctx2out=True, alpha_c=0.0, selector=True, dropout=True):
-        
-        Args:
-            word_to_idx: word-to-index mapping dictionary.
-            dim_feature: (optional) Dimension of vggnet19 conv5_3 feature vectors.
-            dim_embed: (optional) Dimension of word embedding.
-            dim_hidden: (optional) Dimension of all hidden state.
-            n_time_step: (optional) Time step size of LSTM. 
-            prev2out: (optional) previously generated word to hidden state. (see Eq (7) for explanation)
-            ctx2out: (optional) context to hidden state (see Eq (7) for explanation)
-            alpha_c: (optional) Doubly stochastic regularization coefficient. (see Section (4.2.1) for explanation)
-            selector: (optional) gating scalar for context vector. (see Section (4.2.1) for explanation)
-            dropout: (optional) If true then dropout layer is added.
-        
-        
-        self.word_to_idx = word_to_idx
-        self.idx_to_word = {i: w for w, i in word_to_idx.iteritems()}
-        self.prev2out = prev2out
-        self.ctx2out = ctx2out
-        self.alpha_c = alpha_c
-        self.selector = selector
-        self.dropout = dropout
-        self.V = len(word_to_idx)
-        self.L = dim_feature[0]
-        self.D = dim_feature[1]
-        self.M = dim_embed
-        self.H = dim_hidden
-        self.T = n_time_step
-        self._start = word_to_idx['<START>']
-        self._null = word_to_idx['<NULL>']
 
-        self.weight_initializer = tf.contrib.layers.xavier_initializer()
-        self.const_initializer = tf.constant_initializer(0.0)
-        self.emb_initializer = tf.random_uniform_initializer(minval=-1.0, maxval=1.0)
-
-        # Place holder for features and captions
-        self.features = tf.placeholder(tf.float32, [None, self.L, self.D])
-        self.captions = tf.placeholder(tf.int32, [None, self.T + 1])
-    """
     def _get_initial_lstm(self, features):
         with tf.variable_scope('initial_lstm'):
             features_mean = tf.reduce_mean(features, 1)
@@ -311,16 +268,16 @@ class CaptionGenerator(object):
         for t in range(self.T):
             word_emb = self._word_embedding(inputs=captions_in[:, t], reuse=tf.AUTO_REUSE) # (batch_size, dim_embed)
 
-            context, alpha = self._attention_layer(features, features_proj, h, reuse=(t!=0))
+            context, alpha = self._attention_layer(features, features_proj, h, reuse=tf.AUTO_REUSE)
             alpha_list.append(alpha)
 
             if self.selector:
-                context, beta = self._selector(context, h, reuse=(t!=0)) 
+                context, beta = self._selector(context, h, reuse=tf.AUTO_REUSE) 
 
-            with tf.variable_scope('lstm', reuse=(t!=0)):
+            with tf.variable_scope('lstm', reuse=tf.AUTO_REUSE):
                 _, (c, h) = lstm_cell(inputs=tf.concat([word_emb, context], 1), state=[c, h])
 
-            logits = self._decode_lstm(word_emb, h, context, dropout=self.dropout, reuse=(t!=0))
+            logits = self._decode_lstm(word_emb, h, context, dropout=self.dropout, reuse=tf.AUTO_REUSE)
 
             cross_entropy = tf.multiply(tf.nn.softmax_cross_entropy_with_logits(labels=onehot[:,t,:], logits=logits), mask[:, t])
             losses.append(tf.reduce_sum(cross_entropy))
@@ -353,19 +310,19 @@ class CaptionGenerator(object):
             if t == 0:
                 x = self._word_embedding(inputs=tf.fill([tf.shape(features)[0]], self._start))
             else:
-                x = self._word_embedding(inputs=sampled_word, reuse=True)  
+                x = self._word_embedding(inputs=sampled_word, reuse=tf.AUTO_REUSE)  
           
-            context, alpha = self._attention_layer(features, features_proj, h, reuse=(t!=0))
+            context, alpha = self._attention_layer(features, features_proj, h, reuse=tf.AUTO_REUSE)
             alpha_list.append(alpha)
 
             if self.selector:
-                context, beta = self._selector(context, h, reuse=(t!=0)) 
+                context, beta = self._selector(context, h, reuse=tf.AUTO_REUSE) 
                 beta_list.append(beta)
 
-            with tf.variable_scope('lstm', reuse=(t!=0)):
+            with tf.variable_scope('lstm', reuse=tf.AUTO_REUSE):
                 _, (c, h) = lstm_cell(inputs=tf.concat([x, context], 1), state=[c, h])
 
-            logits = self._decode_lstm(x, h, context, reuse=(t!=0))
+            logits = self._decode_lstm(x, h, context, reuse=tf.AUTO_REUSE)
             sampled_word = tf.argmax(logits, 1)       
             sampled_word_list.append(sampled_word)     
 

@@ -70,11 +70,6 @@ class CaptioningSolver(object):
         # train/val dataset
         n_examples = self.record_size*len(self.data)
         n_iters_per_epoch = int(np.ceil(float(n_examples)/self.batch_size))
-        #features = self.data['features']
-        #captions = self.data['captions']
-        #image_idxs = self.data['image_idxs']
-        #val_features = self.val_data['features']
-        #n_iters_val = int(np.ceil(float(val_features.shape[0])/self.batch_size))
 
         # build graphs for training model and sampling captions
         self.model.create_dataset(self.batch_size)
@@ -105,19 +100,19 @@ class CaptioningSolver(object):
         print("Iterations per epoch: %d" %n_iters_per_epoch)
         
         config = tf.ConfigProto(allow_soft_placement = True)
-        #config.gpu_options.per_process_gpu_memory_fraction=0.9
         config.gpu_options.allow_growth = True
         with tf.Session(config=config) as sess:
             sess.run(tf.global_variables_initializer())
             summary_writer = tf.summary.FileWriter(self.log_path, graph=tf.get_default_graph())
             saver = tf.train.Saver(max_to_keep=10)
 
+            # restore latest pretrained model, if param resotre_model has been assigned model path
             if self.restore_model is not None:
-                latest_ckpt = tf.train.latedt_checkpoint(self.restore_model)
+                latest_ckpt = tf.train.latest_checkpoint(self.restore_model)
                 if not latest_ckpt:
                     print('Not found checkpoint in {}'.format(self.restore_model))
                 else:
-                    print("Start training with pretrained Model..")
+                    print("Start training with pretrained Model {} ...".format(latest_ckpt))
                     saver.restore(sess, latest_ckpt)
 
             prev_loss = -1
@@ -128,62 +123,67 @@ class CaptioningSolver(object):
 
             start_t = time.time()
 
+            try:
+                for e in range(self.n_epochs):
+                    for i in range(n_iters_per_epoch):
+                
+                        feed_dict = {self.model.handle: training_handle}
+                        op = [global_step, loss, train_op, self.model.captions, generated_captions]
+                        step_, l, _, ground_truths, gen_caps = sess.run(op, feed_dict=feed_dict)
+                        curr_loss += l
 
-            for e in range(self.n_epochs):
-                for i in range(n_iters_per_epoch):
+                        # write summary for tensorboard visualization
+                        if i % 10 == 0:
+                            summary = sess.run(summary_op, feed_dict)
+                            summary_writer.add_summary(summary, global_step=step_)
+
+                        if (i+1) % self.print_every == 0:
+                            print("[epoch {} / step {}] loss: {:.5f}".format(e+1, step_, l))
+                            ground_truths = ground_truths[0]
+
+                            def decode(ids):
+                                return ' '.join([self.model.dec_map[x] for x in ids])
+
+                            ground_truths = decode(ground_truths)
+
+                            print('    Ground truth: {}'.format(ground_truths))
+                            gen_caps = gen_caps[0]
+                            gen_caps = decode(gen_caps)
+                            print("    Generated caption: {}".format(gen_caps))
+
+                    #print("  Previous epoch loss: ", prev_loss)
+                    #print("  Current epoch loss: ", curr_loss)
+                    print("  [epoch {}] End. prev loss: {:.5f}, cur loss: {:.5f}, Elapsed time: {:.4f}".format(
+                                            e+1, prev_loss, curr_loss, time.time() - start_t))
+                    prev_loss = curr_loss
+                    curr_loss = 0
+                    '''
+                    # print out BLEU scores and file write
+                    if self.print_bleu:
+                        all_gen_cap = np.ndarray((val_features.shape[0], 20))
+                        for i in range(n_iters_val):
+                            features_batch = val_features[i*self.batch_size:(i+1)*self.batch_size]
+                            feed_dict = {self.model.features: features_batch}
+                            gen_cap = sess.run(generated_captions, feed_dict=feed_dict)  
+                            all_gen_cap[i*self.batch_size:(i+1)*self.batch_size] = gen_cap
+                        
+                        all_decoded = decode_captions(all_gen_cap, self.model.idx_to_word)
+                        save_pickle(all_decoded, "./data/val/val.candidate.captions.pkl")
+                        scores = evaluate(data_path='./data', split='val', get_scores=True)
+                        write_bleu(scores=scores, path=self.model_path, epoch=e)
+                    '''
+                    # save model's parameters
+                    if (e+1) % self.save_every == 0:
+                        saver.save(sess, os.path.join(self.model_path, 'model'), global_step=global_step)
+                        print("model-%s saved." % (step_))
             
-                    feed_dict = {self.model.handle: training_handle}
-                    op = [global_step, loss, train_op, self.model.captions, generated_captions]
-                    step_, l, _, ground_truths, gen_caps = sess.run(op, feed_dict=feed_dict)
-                    curr_loss += l
-
-                    # write summary for tensorboard visualization
-                    if i % 10 == 0:
-                        summary = sess.run(summary_op, feed_dict)
-                        summary_writer.add_summary(summary, global_step=step_)
-
-                    if (i+1) % self.print_every == 0:
-                        print("[epoch {} / step {}] loss: {:.5f}".format(e+1, step_, l))
-                        ground_truths = ground_truths[0]
-
-                        def decode(ids):
-                            return ' '.join([self.model.dec_map[x] for x in ids])
-
-                        ground_truths = decode(ground_truths)
-
-                        print('    Ground truth: {}'.format(ground_truths))
-                        gen_caps = gen_caps[0]
-                        gen_caps = decode(gen_caps)
-                        print("    Generated caption: {}".format(gen_caps))
-
-                #print("  Previous epoch loss: ", prev_loss)
-                #print("  Current epoch loss: ", curr_loss)
-                print("  [epoch {}] End. prev loss: {:.5f}, cur loss: {:.5f}, Elapsed time: {:.4f}".format(
-                                        e+1, prev_loss, curr_loss, time.time() - start_t))
-                prev_loss = curr_loss
-                curr_loss = 0
-                '''
-                # print out BLEU scores and file write
-                if self.print_bleu:
-                    all_gen_cap = np.ndarray((val_features.shape[0], 20))
-                    for i in range(n_iters_val):
-                        features_batch = val_features[i*self.batch_size:(i+1)*self.batch_size]
-                        feed_dict = {self.model.features: features_batch}
-                        gen_cap = sess.run(generated_captions, feed_dict=feed_dict)  
-                        all_gen_cap[i*self.batch_size:(i+1)*self.batch_size] = gen_cap
-                    
-                    all_decoded = decode_captions(all_gen_cap, self.model.idx_to_word)
-                    save_pickle(all_decoded, "./data/val/val.candidate.captions.pkl")
-                    scores = evaluate(data_path='./data', split='val', get_scores=True)
-                    write_bleu(scores=scores, path=self.model_path, epoch=e)
-                '''
-                # save model's parameters
-                if (e+1) % self.save_every == 0:
-                    saver.save(sess, os.path.join(self.model_path, 'model'), global_step=global_step)
-                    print("model-%s saved." %(global_step))
+            except KeyboardInterrupt:
+                print('Interrupt !!')
+                saver.save(sess, os.path.join(self.model_path, 'model'), global_step=global_step)
+                print('model-%s saved.' % (step_))            
             
-    """     
-    def test(self, data, split='train', attention_visualization=True, save_sampled_captions=True):
+    """
+    def test(self, data, split='train', attention_visualization=False, save_sampled_captions=True):
         '''
         Args:
             - data: dictionary with the following keys:
@@ -206,11 +206,31 @@ class CaptioningSolver(object):
         config.gpu_options.allow_growth = True
         with tf.Session(config=config) as sess:
             saver = tf.train.Saver()
-            saver.restore(sess, self.test_model)
-            features_batch, image_files = sample_coco_minibatch(data, self.batch_size)
+
+            if self.restore_model is None:
+                print('please specify the restore path')
+                return
+            
+            latest_ckpt = tf.train.latest_checkpoint(self.restore_model)
+            if not latest_ckpt:
+                print('Not found checkpoint in {}'.format(self.restore_model))
+                return
+            else:
+                print('Start testing with pretrained Model {}...'.format(latest_ckpt))
+                saver.restore(sess, latest_ckpt)
+            
+
+
+            #features_batch, image_files = sample_coco_minibatch(data, self.batch_size)
             feed_dict = { self.model.features: features_batch }
             alps, bts, sam_cap = sess.run([alphas, betas, sampled_captions], feed_dict)  # (N, max_len, L), (N, max_len)
-            decoded = decode_captions(sam_cap, self.model.idx_to_word)
+            
+            def decode_from_st_to_ed(ids, st=0, ed=1):
+                start_point = 0 if st not in ids else ids.index(st)
+                end_point = None if ed not in ids else ids.index(ed)
+                return ' '.join([self.model.dec_map[x] for x in ids[start_point:end_point])
+
+            decoded = decode_from_st_to_ed(sam_cap)
 
             if attention_visualization:
                 for n in range(10):

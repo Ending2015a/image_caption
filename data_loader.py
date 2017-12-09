@@ -24,7 +24,6 @@ def preprocess_coco_data(csv_file):
 
     return data
 
-
 def load_coco_data(csv_file):
     data = np.load(csv_file).item()
     return data
