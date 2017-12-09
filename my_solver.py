@@ -69,7 +69,7 @@ class CaptioningSolver(object):
         global_step = tf.get_variable('global_step', [],
                                     initializer=tf.constant_initializer(0), trainable=False)
         # train/val dataset
-        n_examples = self.record_size*len(self.data)
+        n_examples = 513969
         n_iters_per_epoch = int(np.ceil(float(n_examples)/self.batch_size))
 
         # build graphs for training model and sampling captions
