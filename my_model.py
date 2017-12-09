@@ -100,6 +100,9 @@ class CaptionGenerator(object):
             dataset = tf.data.TFRecordDataset(filenames)
             dataset = dataset.map(record_parser, num_parallel_calls=16)
 
+            dataset = dataset.repeat()
+            dataset = dataset.shuffle(batch_size*3)
+
             dataset = dataset.padded_batch(
                     batch_size=batch_size,
                     padded_shapes={
@@ -115,9 +118,6 @@ class CaptionGenerator(object):
                         'output_seq': 1,
                         'mask': 0}
                     )
-
-            dataset = dataset.repeat()
-            dataset = dataset.shuffle(batch_size)
 
             iterator = dataset.make_initializable_iterator()
             output_types = dataset.output_types

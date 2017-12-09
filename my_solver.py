@@ -103,6 +103,7 @@ class CaptioningSolver(object):
         config = tf.ConfigProto(allow_soft_placement = True)
         config.gpu_options.allow_growth = True
         with tf.Session(config=config) as sess:
+            # initialize variable
             sess.run(tf.global_variables_initializer())
             summary_writer = tf.summary.FileWriter(self.log_path, graph=tf.get_default_graph())
             saver = tf.train.Saver(max_to_keep=10)
@@ -119,18 +120,25 @@ class CaptioningSolver(object):
             prev_loss = -1
             curr_loss = 0
 
+            # get training handle
             training_handle = sess.run(self.model.training_iterator.string_handle())
+            # run init dataset 
             sess.run(self.model.training_iterator.initializer, feed_dict={self.model.filenames: self.data})
 
-            start_t = time.time()
-
+            
             try:
+                save_point = 0
                 for e in range(self.n_epochs):
+                    start_epoch_time = time.time()
+                    start_iter_time = time.time()
                     for i in range(n_iters_per_epoch):
                 
+                        # feed_dict (feed training dataset handle)
                         feed_dict = {self.model.handle: training_handle}
-                        op = [global_step, loss, train_op, self.model.captions, generated_captions]
-                        step_, l, _, ground_truths, gen_caps = sess.run(op, feed_dict=feed_dict)
+                        # run op
+                        op = [global_step, self.model.captions, loss, generated_captions, train_op]
+                        step_, ground_truths, l, gen_caps, _ = sess.run(op, feed_dict=feed_dict)
+                        
                         curr_loss += l
 
                         # write summary for tensorboard visualization
@@ -138,24 +146,34 @@ class CaptioningSolver(object):
                             summary = sess.run(summary_op, feed_dict)
                             summary_writer.add_summary(summary, global_step=step_)
 
+                        # print training info for every ${self.print_every}
                         if (i+1) % self.print_every == 0:
-                            print("[epoch {} / step {}] loss: {:.5f}".format(e+1, step_, l))
-                            ground_truths = ground_truths[0]
+                            elapsed_iter_time = time.time() - start_iter_time
+                            print("[epoch {} | iter {}/{} | step {} | save point {}] loss: {:.5f}, elapsed time: {:.4f}".format(
+                                        e+1, i+1, n_iters_per_epoch, step_, save_point, l, elapsed_iter_time))
+                            #============
+                            # epoch: current epoch
+                            # iter: iter step in current epoch for ${n_iters_per_epoch}
+                            # step: current global step
+                            # save point: the latest step to save model
+                            #============
 
                             def decode(ids):
                                 return ' '.join([self.model.dec_map[x] for x in ids])
 
+                            ground_truths = ground_truths[0]
                             ground_truths = decode(ground_truths)
-
-                            print('    Ground truth: {}'.format(ground_truths))
                             gen_caps = gen_caps[0]
                             gen_caps = decode(gen_caps)
+                            print('    Ground truth: {}'.format(ground_truths))
                             print("    Generated caption: {}".format(gen_caps))
+
+                            start_iter_time = time.time()
 
                     #print("  Previous epoch loss: ", prev_loss)
                     #print("  Current epoch loss: ", curr_loss)
-                    print("  [epoch {}] End. prev loss: {:.5f}, cur loss: {:.5f}, Elapsed time: {:.4f}".format(
-                                            e+1, prev_loss, curr_loss, time.time() - start_t))
+                    print("  [epoch {0} | iter {1}/{1} | step {2} | save point {6}] End. prev loss: {3:.5f}, cur loss: {4:.5f}, elapsed time: {5:.4f}".format(
+                                            e+1, n_iters_per_epoch, step_, prev_loss, curr_loss, time.time() - start_epoch_time, save_point))
                     prev_loss = curr_loss
                     curr_loss = 0
                     '''
@@ -175,15 +193,21 @@ class CaptioningSolver(object):
                     '''
                     # save model's parameters
                     if (e+1) % self.save_every == 0:
+                        save_point = step_
                         saver.save(sess, os.path.join(self.model_path, 'model'), global_step=global_step)
                         print("model-%s saved." % (step_))
             
+            # if get interrupt exception then save model
             except KeyboardInterrupt:
-                print('Interrupt !!')
+                print('Interrupt!!')
+            finally:
+                print('End training step, saving model')
                 saver.save(sess, os.path.join(self.model_path, 'model'), global_step=global_step)
-                print('model-%s saved.' % (step_))            
+                print('model-%s saved.' % (step_))
+            
 
-    def test(self, data, split='train', attention_visualization=False, save_sampled_captions=True):
+
+    def test(self, data_file='test_dict.npy', attention_visualization=False, save_sampled_captions=True):
         '''
         Args:
             - data: dictionary with the following keys:
@@ -220,11 +244,12 @@ class CaptioningSolver(object):
                 saver.restore(sess, latest_ckpt)
 
             # read testing data
-            if not os.path.isfile('test_dict.npy'):
-                data = preprocess_coco_testdata('test.csv')
+            if not os.path.isfile(data_file):
+                data = preprocess_coco_testdata('test.csv', data_file)
             else:
-                data = load_coco_testdata('test_dict.npy')
+                data = load_coco_testdata(data_file)
             
+            # decode caption
             def decode_from_st_to_ed(ids, st=0, ed=1):
                 start_point = 0 if st not in ids else ids.index(st)
                 end_point = None if ed not in ids else ids.index(ed)
@@ -233,28 +258,39 @@ class CaptioningSolver(object):
             img_id_list = []
             caption_list = []
 
+            dataset_size = len(data['img_id'])
+
             total_start_time = time.time()
-            for img_id in data['img_id']:
+            # for every dataset
+            for index, img_id in enumerate(data['img_id']):
                 start_time = time.time()
+                # data ID
                 ID = int(img_id.split('.')[0])
                 feature_name = './image/trianval2014_features/COCO_trainval2014_{:012d}.npy'.format(ID)
 
+                # load feature maps
                 feature = np.load(feature_name)
+                # expand to rank 3 (1, 192, 512)
                 feature = np.expand_dims(feature, axis=0)
 
+                # run
                 alps, bts, sam_cap = sess.run([alphas, betas, sampled_captions], 
                                 feed_dict={self.model.features: feature})
 
+                # decode
                 decoded = decode_from_st_to_ed(sam_cap)
 
+                # store answers
                 img_id_list.append(img_id)
                 caption_list.append(decoded)
+
                 elapsed_time = time.time()-start_time
-                print('id: {}, elapsed time: {} sec\n    caption: {}'.format(ID, elapsed_time, decoded))
+                print('[data {}/{}] id: {}, elapsed time: {} sec\n    caption: {}'.format(index, dataset_size, ID, elapsed_time))
+                print('    Generated Caption: {}'.format(decoded))
 
             total_elapsed_time = time.time() - total_start_time
 
-            print('complete! spend {} sec', total_elapsed_time)
+            print('ALL Complete! take {} sec', total_elapsed_time)
             print('generating csv file...')
             df = pd.DataFrame({
                 'img_id':img_id_list,
@@ -262,8 +298,6 @@ class CaptioningSolver(object):
             }).set_index(['img_id'])
 
             df.to_csv('demo.csv')
-
-            print('complete')
 
             #features_batch, image_files = sample_coco_minibatch(data, self.batch_size)
             #feed_dict = { self.model.features: features_batch }
@@ -293,8 +327,6 @@ class CaptioningSolver(object):
                         plt.axis('off')
                     plt.show()
             '''
-
-            
             '''
             if save_sampled_captions:
                 all_sam_cap = np.ndarray((features.shape[0], 20))
