@@ -21,7 +21,7 @@ def main():
     vocab_size = len(dec_map)
     model = CaptionGenerator(enc_map, dec_map, vocab_size)
 
-    solver = CaptioningSolver(model, training_records, n_epochs=1000, batch_size=256,
+    solver = CaptioningSolver(model, training_records, n_epochs=1000, batch_size=200,
                             learning_rate = 0.001, print_every=10, save_every=3, restore_model='model/lstm/', 
                             model_path='model/lstm/', log_path = 'log/')
     solver.train()
