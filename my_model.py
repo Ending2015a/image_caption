@@ -272,6 +272,8 @@ class CaptionGenerator(object):
             context, alpha = self._attention_layer(features, features_proj, h, reuse=tf.AUTO_REUSE)
             alpha_list.append(alpha)
 
+
+
             if self.selector:
                 context, beta = self._selector(context, h, reuse=tf.AUTO_REUSE) 
 
