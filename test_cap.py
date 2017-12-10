@@ -18,7 +18,7 @@ def main():
     enc_map = pickle.load(open(encode_map, 'rb'))
     dec_map = pickle.load(open(decode_map, 'rb'))
     vocab_size = len(dec_map)
-    model = CaptionGenerator(enc_map, dec_map, vocab_size)
+    model = CaptionGenerator(enc_map, dec_map, vocab_size, mode='test')
 
     solver = CaptioningSolver(model, None, restore_model='model/lstm/', model_path='model/lstm/', log_path = 'log/')
     solver.test(test_file)

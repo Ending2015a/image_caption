@@ -295,10 +295,13 @@ class CaptionGenerator(object):
 
     def build_sampler(self, max_len=20):
         features = self.features
+        batch_size = tf.shape(features)[0]
         
         # batch normalize feature vectors
         features = self._batch_norm(features, mode='test', name='conv_features')
         
+        self.bn_features = features
+
         c, h = self._get_initial_lstm(features=features)
         features_proj = self._project_features(features=features)
 
@@ -326,8 +329,11 @@ class CaptionGenerator(object):
             logits = self._decode_lstm(x, h, context, reuse=tf.AUTO_REUSE)
             sampled_word = tf.argmax(logits, 1)       
             sampled_word_list.append(sampled_word)     
+    
+        
 
-        alphas = tf.transpose(tf.stack(alpha_list), (1, 0, 2))     # (N, T, L)
-        betas = tf.transpose(tf.squeeze(beta_list), (1, 0))    # (N, T)
+        alphas = tf.transpose(tf.stack(alpha_list),(1, 0, 2))     # (N, T, L)
+        betas = tf.squeeze(beta_list)    # (N, T)
         sampled_captions = tf.transpose(tf.stack(sampled_word_list), (1, 0))     # (N, max_len)
+        print(sampled_captions.get_shape())
         return alphas, betas, sampled_captions

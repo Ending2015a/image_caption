@@ -106,7 +106,7 @@ class CaptioningSolver(object):
             # initialize variable
             sess.run(tf.global_variables_initializer())
             summary_writer = tf.summary.FileWriter(self.log_path, graph=tf.get_default_graph())
-            saver = tf.train.Saver(max_to_keep=10)
+            saver = tf.train.Saver(var_list=tf.global_variables(), max_to_keep=10)
 
             # restore latest pretrained model, if param resotre_model has been assigned model path
             if self.restore_model is not None:
@@ -221,14 +221,19 @@ class CaptioningSolver(object):
             - save_sampled_captions: If True, save sampled captions to pkl file for computing BLEU scores.
         '''
 
+        self.model.create_dataset(1)
 
         # build a graph to sample captions
-        alphas, betas, sampled_captions = self.model.build_sampler(max_len=20)    # (N, max_len, L), (N, max_len)
+        with tf.variable_scope('lstm', reuse=tf.AUTO_REUSE):
+            alphas, betas, sampled_captions = self.model.build_sampler(max_len=20)    # (N, max_len, L), (N, max_len)
         
         config = tf.ConfigProto(allow_soft_placement=True)
         config.gpu_options.allow_growth = True
         with tf.Session(config=config) as sess:
-            saver = tf.train.Saver()
+
+            sess.run(tf.global_variables_initializer())
+
+            saver = tf.train.Saver(var_list=tf.global_variables())
 
             # restore model
             if self.restore_model is None:
@@ -251,8 +256,9 @@ class CaptioningSolver(object):
             
             # decode caption
             def decode_from_st_to_ed(ids, st=0, ed=1):
+                ids = ids.tolist()
                 start_point = 0 if st not in ids else ids.index(st)
-                end_point = None if ed not in ids else ids.index(ed)
+                end_point = -1 if ed not in ids else ids.index(ed)
                 return ' '.join([self.model.dec_map[x] for x in ids[start_point:end_point]])
 
             img_id_list = []
@@ -261,12 +267,14 @@ class CaptioningSolver(object):
             dataset_size = len(data['img_id'])
 
             total_start_time = time.time()
-            # for every dataset
+            
+            start_time = time.time()
+            # iterate dataset
             for index, img_id in enumerate(data['img_id']):
                 start_time = time.time()
                 # data ID
                 ID = int(img_id.split('.')[0])
-                feature_name = './image/trianval2014_features/COCO_trainval2014_{:012d}.npy'.format(ID)
+                feature_name = './image/trainval2014_features/COCO_trainval2014_{:012d}.npy'.format(ID)
 
                 # load feature maps
                 feature = np.load(feature_name)
@@ -277,6 +285,8 @@ class CaptioningSolver(object):
                 alps, bts, sam_cap = sess.run([alphas, betas, sampled_captions], 
                                 feed_dict={self.model.features: feature})
 
+                sam_cap = sam_cap[0]
+
                 # decode
                 decoded = decode_from_st_to_ed(sam_cap)
 
@@ -284,13 +294,15 @@ class CaptioningSolver(object):
                 img_id_list.append(img_id)
                 caption_list.append(decoded)
 
-                elapsed_time = time.time()-start_time
-                print('[data {}/{}] id: {}, elapsed time: {} sec'.format(index, dataset_size, ID, elapsed_time))
-                print('    Generated Caption: {}'.format(decoded))
+                if index % 100 == 0:
+                    elapsed_time = time.time()-start_time
+                    print('[data {}/{}] id: {}, elapsed time: {} sec'.format(index, dataset_size, ID, elapsed_time))
+                    print('    Generated Caption: {}'.format(decoded))
+                    start_time = time.time()
 
             total_elapsed_time = time.time() - total_start_time
 
-            print('ALL Complete! take {} sec', total_elapsed_time)
+            print('ALL Complete! take {} sec'.format(total_elapsed_time))
             print('generating csv file...')
             df = pd.DataFrame({
                 'img_id':img_id_list,
